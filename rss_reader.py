@@ -140,6 +140,97 @@ def get_article_counts_for_feeds(feeds, feed_parser):
     return counts
 
 
+def generate_and_save_summary(articles, source_name, summarizer):
+    """Generate and save a summary for the given articles."""
+    console = Console()
+    
+    prepared_articles = summarizer.prepare_articles_for_summary(articles)
+    
+    # Display token count
+    total_tokens = summarizer.display_token_summary(prepared_articles)
+    
+    console.print("\n[dim]Sending to Gemini API...[/dim]")
+    summary = summarizer.summarize_articles(prepared_articles)
+    
+    if summary:
+        console.print("\n[bold green]AI Summary Generated:[/bold green]\n")
+        console.print(summary)
+        
+        # Automatically save summary to file
+        console.print("\n[dim]Generating title...[/dim]")
+        generated_title = summarizer.generate_title(summary)
+        
+        # Create filename with date and title
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        # Sanitize title for filename
+        safe_title = re.sub(r'[^\w\s-]', '', generated_title)
+        safe_title = re.sub(r'[-\s]+', '-', safe_title)
+        
+        # Only use the title in the filename, no source names
+        filename = f"{date_str} {safe_title}.md"
+        
+        # Save to Obsidian folder
+        obsidian_folder = '/Users/svaug/Library/CloudStorage/Dropbox/Obsidian/Personal'
+        filepath = os.path.join(obsidian_folder, filename)
+        
+        # Ensure the directory exists
+        os.makedirs(obsidian_folder, exist_ok=True)
+        
+        with open(filepath, 'w') as f:
+            f.write(f"# {generated_title}\n\n")
+            f.write(f"Source: {source_name}\n")
+            f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+            f.write(f"Generated from {len(articles)} articles\n")
+            f.write(f"Input tokens: {total_tokens:,}\n")
+            
+            # Calculate output tokens and costs
+            output_tokens = len(summary.split()) * 1.34  # Estimate output tokens
+            
+            # Get pricing based on model
+            if 'flash-lite' in summarizer.model_name.lower():
+                input_price = 0.10
+                output_price = 0.40
+                model_display = "Gemini 2.5 Flash-Lite"
+            elif 'flash' in summarizer.model_name.lower():
+                input_price = 0.30
+                output_price = 2.50
+                model_display = "Gemini 2.5 Flash"
+            else:
+                input_price = 1.25
+                output_price = 10.00
+                model_display = "Gemini 2.5 Pro"
+            
+            input_cost = (total_tokens / 1_000_000) * input_price
+            output_cost = (output_tokens / 1_000_000) * output_price
+            total_cost = input_cost + output_cost
+            
+            f.write(f"Output tokens: ~{int(output_tokens):,}\n")
+            f.write(f"Model: {model_display}\n")
+            f.write(f"Estimated cost: ${total_cost:.6f} (input: ${input_cost:.6f}, output: ${output_cost:.6f})\n")
+            f.write("\n---\n\n")
+            f.write(summary)
+            f.write("\n\n---\n\n")
+            f.write("## Appendix: Full Article List\n\n")
+            
+            # Append all articles with their details
+            for i, article in enumerate(articles, 1):
+                f.write(f"### {i}. {article.title}\n")
+                f.write(f"- **Source:** {article.feed_title}\n")
+                f.write(f"- **Category:** {article.category}\n")
+                f.write(f"- **Published:** {article.published.strftime('%Y-%m-%d %H:%M')}\n")
+                f.write(f"- **URL:** {article.link}\n")
+                if article.summary:
+                    f.write(f"- **Summary:** {article.summary}\n")
+                f.write("\n")
+        
+        console.print(f"\n[green]✓ Summary automatically saved to: {filename}[/green]")
+        console.print(f"[dim]Full path: {filepath}[/dim]")
+        
+        return True
+    
+    return False
+
+
 def display_articles(articles, show_summary=True):
     if not articles:
         console.print("[yellow]No articles found in the last 24 hours.[/yellow]")
@@ -161,8 +252,8 @@ def display_articles(articles, show_summary=True):
 
 
 @click.command()
-@click.option('--category', '-c', help='Filter by category name')
-@click.option('--feed', '-f', help='Filter by specific feed name')
+@click.option('--category', '-c', multiple=True, help='Filter by category name(s) - can specify multiple')
+@click.option('--feed', '-f', multiple=True, help='Filter by specific feed name(s) - can specify multiple')
 @click.option('--list-categories', is_flag=True, help='List all available categories')
 @click.option('--list-feeds', is_flag=True, help='List all feeds (optionally filtered by category)')
 @click.option('--show-counts', is_flag=True, help='Show article counts from past 24h when listing (slower but informative)')
@@ -173,9 +264,10 @@ def display_articles(articles, show_summary=True):
 @click.option('--organize-feeds', help='Organize feed file as all_feeds_TIMESTAMP.xml (provide source file)')
 @click.option('--no-summary', is_flag=True, help='Hide article summaries')
 @click.option('--summarize', is_flag=True, help='Generate AI summary of articles using Gemini')
+@click.option('--separate-summaries', is_flag=True, help='Generate separate summaries for each category/feed instead of combining')
 @click.option('--opml', help='Path to OPML file (auto-detected if not specified)')
 @click.option('--limit', '-l', type=int, help='Limit number of articles shown')
-def main(category, feed, list_categories, list_feeds, show_counts, health_check, remove_defunct, fix_urls, export_health, organize_feeds, no_summary, summarize, opml, limit):
+def main(category, feed, list_categories, list_feeds, show_counts, health_check, remove_defunct, fix_urls, export_health, organize_feeds, no_summary, summarize, separate_summaries, opml, limit):
     """
     RSS Feed Aggregator - Fetch articles from the last 24 hours
     
@@ -239,18 +331,36 @@ def main(category, feed, list_categories, list_feeds, show_counts, health_check,
     
     if list_feeds:
         if category:
-            # Use fuzzy matching for category
-            matched_category = fuzzy_find_category(category, parser.get_categories())
-            if not matched_category:
-                console.print(f"[red]Category '{category}' not found.[/red]")
-                suggestions = get_close_matches(category, parser.get_categories(), n=3, cutoff=0.4)
-                if suggestions:
-                    console.print("[yellow]Did you mean one of these?[/yellow]")
-                    for s in suggestions:
-                        console.print(f"  • {s}")
+            # Handle multiple categories
+            feeds = []
+            category_names = []
+            for cat in category:
+                matched_category = fuzzy_find_category(cat, parser.get_categories())
+                if not matched_category:
+                    console.print(f"[red]Category '{cat}' not found.[/red]")
+                    suggestions = get_close_matches(cat, parser.get_categories(), n=3, cutoff=0.4)
+                    if suggestions:
+                        console.print("[yellow]Did you mean one of these?[/yellow]")
+                        for s in suggestions:
+                            console.print(f"  • {s}")
+                    continue
+                category_feeds = parser.get_feeds_by_category(matched_category)
+                feeds.extend(category_feeds)
+                category_names.append(matched_category)
+            
+            if not feeds:
                 return
-            feeds = parser.get_feeds_by_category(matched_category)
-            console.print(f"\n[bold]Feeds in category '{matched_category}':[/bold]\n")
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_feeds = []
+            for f in feeds:
+                if f.xml_url not in seen:
+                    seen.add(f.xml_url)
+                    unique_feeds.append(f)
+            feeds = unique_feeds
+            
+            console.print(f"\n[bold]Feeds in categories: {', '.join(category_names)} ({len(feeds)} total):[/bold]\n")
         else:
             feeds = all_feeds
             console.print(f"\n[bold]All Feeds ({len(feeds)} total):[/bold]\n")
@@ -453,36 +563,56 @@ def main(category, feed, list_categories, list_feeds, show_counts, health_check,
     
     feed_parser = FeedParser()
     
-    feeds_to_fetch = []
+    # Collect feeds from all specified categories and feeds
+    feeds_to_fetch = set()  # Use set to avoid duplicates
+    feed_sources = []  # Track sources for display
     
+    # Process categories
+    if category:
+        for cat in category:
+            matched_category = fuzzy_find_category(cat, parser.get_categories())
+            if not matched_category:
+                console.print(f"[red]Category '{cat}' not found.[/red]")
+                suggestions = get_close_matches(cat, parser.get_categories(), n=3, cutoff=0.4)
+                if suggestions:
+                    console.print("[yellow]Did you mean one of these?[/yellow]")
+                    for s in suggestions:
+                        console.print(f"  • {s}")
+                continue
+            
+            if matched_category != cat:
+                console.print(f"[green]Found category: {matched_category}[/green]")
+            
+            category_feeds = parser.get_feeds_by_category(matched_category)
+            for f in category_feeds:
+                feeds_to_fetch.add((f.xml_url, f.title, f.category))
+            feed_sources.append(('category', matched_category))
+    
+    # Process individual feeds
     if feed:
-        matched_feeds = fuzzy_find_feed(feed, all_feeds)
-        if not matched_feeds:
-            console.print(f"[red]Feed '{feed}' not found.[/red]")
-            return
-        feeds_to_fetch = [(f.xml_url, f.title, f.category) for f in matched_feeds]
-        if len(matched_feeds) > 1:
-            console.print(f"[yellow]Found {len(matched_feeds)} feeds matching '{feed}'[/yellow]")
-    elif category:
-        # Try fuzzy matching for category
-        matched_category = fuzzy_find_category(category, parser.get_categories())
-        if not matched_category:
-            console.print(f"[red]Category '{category}' not found.[/red]")
-            # Suggest similar categories
-            suggestions = get_close_matches(category, parser.get_categories(), n=3, cutoff=0.4)
-            if suggestions:
-                console.print("[yellow]Did you mean one of these?[/yellow]")
-                for s in suggestions:
-                    console.print(f"  • {s}")
-            return
-        
-        if matched_category != category:
-            console.print(f"[green]Found category: {matched_category}[/green]")
-        
-        category_feeds = parser.get_feeds_by_category(matched_category)
-        feeds_to_fetch = [(f.xml_url, f.title, f.category) for f in category_feeds]
-    else:
+        for f in feed:
+            matched_feeds = fuzzy_find_feed(f, all_feeds)
+            if not matched_feeds:
+                console.print(f"[red]Feed '{f}' not found.[/red]")
+                continue
+            
+            for mf in matched_feeds:
+                feeds_to_fetch.add((mf.xml_url, mf.title, mf.category))
+            
+            if len(matched_feeds) > 1:
+                console.print(f"[yellow]Found {len(matched_feeds)} feeds matching '{f}'[/yellow]")
+            feed_sources.append(('feed', matched_feeds[0].title if matched_feeds else f))
+    
+    # If no categories or feeds specified, use all
+    if not category and not feed:
         feeds_to_fetch = [(f.xml_url, f.title, f.category) for f in all_feeds]
+        feed_sources.append(('all', 'All Feeds'))
+    
+    feeds_to_fetch = list(feeds_to_fetch)  # Convert back to list
+    
+    if not feeds_to_fetch:
+        console.print("[red]No feeds to fetch.[/red]")
+        return
     
     console.print(f"\n[bold]Fetching articles from {len(feeds_to_fetch)} feeds...[/bold]\n")
     
@@ -504,87 +634,41 @@ def main(category, feed, list_categories, list_feeds, show_counts, health_check,
                 return
                 
             try:
-                console.print("\n[bold]Generating AI Summary...[/bold]")
-                
                 summarizer = GeminiSummarizer()
-                prepared_articles = summarizer.prepare_articles_for_summary(articles)
                 
-                # Display token count
-                total_tokens = summarizer.display_token_summary(prepared_articles)
-                
-                console.print("\n[dim]Sending to Gemini API...[/dim]")
-                summary = summarizer.summarize_articles(prepared_articles)
-                
-                if summary:
-                    console.print("\n[bold green]AI Summary Generated:[/bold green]\n")
-                    console.print(summary)
+                if separate_summaries and len(feed_sources) > 1:
+                    # Generate separate summaries for each source
+                    console.print(f"\n[bold]Generating {len(feed_sources)} separate AI summaries...[/bold]")
                     
-                    # Automatically save summary to file
-                    console.print("\n[dim]Generating title...[/dim]")
-                    generated_title = summarizer.generate_title(summary)
-                    
-                    # Create filename with date and title
-                    date_str = datetime.now().strftime('%Y-%m-%d')
-                    # Sanitize title for filename
-                    safe_title = re.sub(r'[^\w\s-]', '', generated_title)
-                    safe_title = re.sub(r'[-\s]+', '-', safe_title)
-                    filename = f"{date_str} {safe_title}.md"
-                    
-                    # Save to Obsidian folder
-                    obsidian_folder = '/Users/svaug/Library/CloudStorage/Dropbox/Obsidian/Personal'
-                    filepath = os.path.join(obsidian_folder, filename)
-                    
-                    # Ensure the directory exists
-                    os.makedirs(obsidian_folder, exist_ok=True)
-                    
-                    with open(filepath, 'w') as f:
-                        f.write(f"# {generated_title}\n\n")
-                        f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
-                        f.write(f"Generated from {len(articles)} articles\n")
-                        f.write(f"Input tokens: {total_tokens:,}\n")
+                    for source_type, source_name in feed_sources:
+                        console.print(f"\n[cyan]Processing {source_type}: {source_name}[/cyan]")
                         
-                        # Calculate output tokens and costs
-                        output_tokens = len(summary.split()) * 1.34  # Estimate output tokens
+                        # Filter articles for this source
+                        if source_type == 'category':
+                            source_articles = [a for a in articles if a.category == source_name]
+                        elif source_type == 'feed':
+                            source_articles = [a for a in articles if a.feed_title == source_name]
+                        else:  # 'all'
+                            source_articles = articles
                         
-                        # Get pricing based on model
-                        if 'flash-lite' in summarizer.model_name.lower():
-                            input_price = 0.10
-                            output_price = 0.40
-                            model_display = "Gemini 2.5 Flash-Lite"
-                        elif 'flash' in summarizer.model_name.lower():
-                            input_price = 0.30
-                            output_price = 2.50
-                            model_display = "Gemini 2.5 Flash"
+                        if source_articles:
+                            console.print(f"Found {len(source_articles)} articles for {source_name}")
+                            generate_and_save_summary(source_articles, source_name, summarizer)
                         else:
-                            input_price = 1.25
-                            output_price = 10.00
-                            model_display = "Gemini 2.5 Pro"
-                        
-                        input_cost = (total_tokens / 1_000_000) * input_price
-                        output_cost = (output_tokens / 1_000_000) * output_price
-                        total_cost = input_cost + output_cost
-                        
-                        f.write(f"Output tokens: ~{int(output_tokens):,}\n")
-                        f.write(f"Model: {model_display}\n")
-                        f.write(f"Estimated cost: ${total_cost:.6f} (input: ${input_cost:.6f}, output: ${output_cost:.6f})\n")
-                        f.write("\n---\n\n")
-                        f.write(summary)
-                        f.write("\n\n---\n\n")
-                        f.write("## Appendix: Full Article List\n\n")
-                        
-                        # Append all articles with their details
-                        for i, article in enumerate(articles, 1):
-                            f.write(f"### {i}. {article.title}\n")
-                            f.write(f"- **Source:** {article.feed_title}\n")
-                            f.write(f"- **Category:** {article.category}\n")
-                            f.write(f"- **Published:** {article.published.strftime('%Y-%m-%d %H:%M')}\n")
-                            f.write(f"- **URL:** {article.link}\n")
-                            if article.summary:
-                                f.write(f"- **Summary:** {article.summary}\n")
-                            f.write("\n")
+                            console.print(f"[yellow]No articles found for {source_name}[/yellow]")
                     
-                    console.print(f"\n[green]✓ Summary automatically saved to: {filename}[/green]")
-                    console.print(f"[dim]Full path: {filepath}[/dim]")
+                else:
+                    # Generate combined summary
+                    console.print("\n[bold]Generating combined AI Summary...[/bold]")
+                    
+                    # Create source name for combined summary - list ALL sources
+                    if feed_sources:
+                        source_names = [name for _, name in feed_sources]  # All sources
+                        combined_source_name = ", ".join(source_names)
+                    else:
+                        combined_source_name = "All Sources"
+                    
+                    generate_and_save_summary(articles, combined_source_name, summarizer)
                 
             except Exception as e:
                 console.print(f"\n[red]Error during summarization: {str(e)}[/red]")

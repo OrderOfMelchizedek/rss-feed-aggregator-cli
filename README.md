@@ -7,12 +7,15 @@ A command-line tool to fetch and display articles from RSS feeds published in th
 - Parse OPML files containing RSS feed subscriptions
 - Fetch articles from the last 24 hours
 - Filter by category or specific feed with **fuzzy search**
+- **Multiple sources**: Specify multiple categories and/or feeds in a single command
 - Display articles with timestamps, categories, feed names, titles, and summaries
 - Show article counts when listing categories or feeds
 - **Health check** to identify defunct or problematic feeds
 - Remove defunct feeds and create cleaned OPML file
 - Export health check results to CSV or JSON
 - **AI Summarization** using Google Gemini to create news digests
+  - Combined summaries for all sources
+  - Separate summaries for each category/feed with `--separate-summaries`
 - Cache feeds to reduce network requests
 - Parallel feed fetching for better performance
 
@@ -88,13 +91,15 @@ pip install -r requirements.txt
 # Fetch all articles from the last 24 hours
 python rss_reader.py
 
-# Filter by category
+# Filter by category (supports multiple)
 python rss_reader.py --category "Tech Blogs"
 python rss_reader.py -c "Higher Education"
+python rss_reader.py -c "10 Reuters/AP" -c "10.1 Mainstream News"  # Multiple categories
 
-# Filter by specific feed
+# Filter by specific feed (supports multiple)
 python rss_reader.py --feed "Hacker News"
 python rss_reader.py -f "BBC News"
+python rss_reader.py -f "BBC News" -f "CNN" -f "Reuters"  # Multiple feeds
 
 # List all available categories
 python rss_reader.py --list-categories
@@ -108,8 +113,9 @@ python rss_reader.py --list-feeds
 # List feeds with article counts
 python rss_reader.py --list-feeds --show-counts
 
-# List feeds in a specific category with counts
+# List feeds in specific categories with counts (supports multiple)
 python rss_reader.py --list-feeds -c "Political News & Analysis" --show-counts
+python rss_reader.py --list-feeds -c "Tech Blogs" -c "AI News" --show-counts
 
 # Hide summaries (show only titles)
 python rss_reader.py --no-summary
@@ -143,6 +149,10 @@ python rss_reader.py --health-check --fix-urls --export-health health.csv
 python rss_reader.py --summarize                      # Summarize all articles
 python rss_reader.py -c "Tech Blogs" --summarize      # Summarize specific category
 python rss_reader.py --limit 50 --summarize           # Summarize top 50 articles
+
+# Generate separate summaries for multiple sources
+python rss_reader.py -c "Tech" -c "AI" --summarize --separate-summaries
+python rss_reader.py -f "BBC" -f "CNN" --summarize --separate-summaries
 ```
 
 ### Examples
@@ -167,6 +177,27 @@ python rss_reader.py -f "simon"     # Will find "Simon Willison's Weblog"
 4. Check what categories are available:
 ```bash
 python rss_reader.py --list-categories
+```
+
+5. Combine multiple news sources and summarize:
+```bash
+# Get news from multiple categories with AI summary
+python rss_reader.py -c "Reuters" -c "Mainstream" --summarize
+
+# Generate separate summaries for each category
+python rss_reader.py -c "Tech Blogs" -c "AI News" --summarize --separate-summaries
+
+# Mix categories and specific feeds
+python rss_reader.py -c "10 Reuters/AP" -f "BBC News" -f "CNN" --limit 50 --summarize
+```
+
+6. Monitor specific feeds:
+```bash
+# Get latest from your favorite feeds
+python rss_reader.py -f "Hacker News" -f "Ars Technica" -f "The Verge"
+
+# List feeds from multiple categories
+python rss_reader.py --list-feeds -c "Tech" -c "AI" -c "Security" --show-counts
 ```
 
 ## How It Works
