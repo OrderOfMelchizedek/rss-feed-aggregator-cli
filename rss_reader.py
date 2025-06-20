@@ -504,45 +504,87 @@ def main(category, feed, list_categories, list_feeds, show_counts, health_check,
                 return
                 
             try:
-                console.print("\n[bold]Preparing AI Summary...[/bold]\n")
+                console.print("\n[bold]Generating AI Summary...[/bold]")
                 
                 summarizer = GeminiSummarizer()
-                summary = summarizer.interactive_summarize(articles)
+                prepared_articles = summarizer.prepare_articles_for_summary(articles)
+                
+                # Display token count
+                total_tokens = summarizer.display_token_summary(prepared_articles)
+                
+                console.print("\n[dim]Sending to Gemini API...[/dim]")
+                summary = summarizer.summarize_articles(prepared_articles)
                 
                 if summary:
                     console.print("\n[bold green]AI Summary Generated:[/bold green]\n")
                     console.print(summary)
                     
-                    # Optionally save summary to file
-                    save_to_file = Confirm.ask("\nSave summary to file?")
-                    if save_to_file:
-                        # Generate title using Gemini Flash-Lite
-                        console.print("\n[dim]Generating title...[/dim]")
-                        generated_title = summarizer.generate_title(summary)
+                    # Automatically save summary to file
+                    console.print("\n[dim]Generating title...[/dim]")
+                    generated_title = summarizer.generate_title(summary)
+                    
+                    # Create filename with date and title
+                    date_str = datetime.now().strftime('%Y-%m-%d')
+                    # Sanitize title for filename
+                    safe_title = re.sub(r'[^\w\s-]', '', generated_title)
+                    safe_title = re.sub(r'[-\s]+', '-', safe_title)
+                    filename = f"{date_str} {safe_title}.md"
+                    
+                    # Save to Obsidian folder
+                    obsidian_folder = '/Users/svaug/Library/CloudStorage/Dropbox/Obsidian/Personal'
+                    filepath = os.path.join(obsidian_folder, filename)
+                    
+                    # Ensure the directory exists
+                    os.makedirs(obsidian_folder, exist_ok=True)
+                    
+                    with open(filepath, 'w') as f:
+                        f.write(f"# {generated_title}\n\n")
+                        f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+                        f.write(f"Generated from {len(articles)} articles\n")
+                        f.write(f"Input tokens: {total_tokens:,}\n")
                         
-                        # Create filename with date and title
-                        date_str = datetime.now().strftime('%Y-%m-%d')
-                        # Sanitize title for filename
-                        safe_title = re.sub(r'[^\w\s-]', '', generated_title)
-                        safe_title = re.sub(r'[-\s]+', '-', safe_title)
-                        filename = f"{date_str} {safe_title}.md"
+                        # Calculate output tokens and costs
+                        output_tokens = len(summary.split()) * 1.34  # Estimate output tokens
                         
-                        # Save to Obsidian folder
-                        obsidian_folder = '/Users/svaug/Library/CloudStorage/Dropbox/Obsidian/Personal'
-                        filepath = os.path.join(obsidian_folder, filename)
+                        # Get pricing based on model
+                        if 'flash-lite' in summarizer.model_name.lower():
+                            input_price = 0.10
+                            output_price = 0.40
+                            model_display = "Gemini 2.5 Flash-Lite"
+                        elif 'flash' in summarizer.model_name.lower():
+                            input_price = 0.30
+                            output_price = 2.50
+                            model_display = "Gemini 2.5 Flash"
+                        else:
+                            input_price = 1.25
+                            output_price = 10.00
+                            model_display = "Gemini 2.5 Pro"
                         
-                        # Ensure the directory exists
-                        os.makedirs(obsidian_folder, exist_ok=True)
+                        input_cost = (total_tokens / 1_000_000) * input_price
+                        output_cost = (output_tokens / 1_000_000) * output_price
+                        total_cost = input_cost + output_cost
                         
-                        with open(filepath, 'w') as f:
-                            f.write(f"# {generated_title}\n\n")
-                            f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
-                            f.write(f"Generated from {len(articles)} articles\n\n")
-                            f.write("---\n\n")
-                            f.write(summary)
+                        f.write(f"Output tokens: ~{int(output_tokens):,}\n")
+                        f.write(f"Model: {model_display}\n")
+                        f.write(f"Estimated cost: ${total_cost:.6f} (input: ${input_cost:.6f}, output: ${output_cost:.6f})\n")
+                        f.write("\n---\n\n")
+                        f.write(summary)
+                        f.write("\n\n---\n\n")
+                        f.write("## Appendix: Full Article List\n\n")
                         
-                        console.print(f"\n[green]Summary saved to Obsidian: {filename}[/green]")
-                        console.print(f"[dim]Full path: {filepath}[/dim]")
+                        # Append all articles with their details
+                        for i, article in enumerate(articles, 1):
+                            f.write(f"### {i}. {article.title}\n")
+                            f.write(f"- **Source:** {article.feed_title}\n")
+                            f.write(f"- **Category:** {article.category}\n")
+                            f.write(f"- **Published:** {article.published.strftime('%Y-%m-%d %H:%M')}\n")
+                            f.write(f"- **URL:** {article.link}\n")
+                            if article.summary:
+                                f.write(f"- **Summary:** {article.summary}\n")
+                            f.write("\n")
+                    
+                    console.print(f"\n[green]✓ Summary automatically saved to: {filename}[/green]")
+                    console.print(f"[dim]Full path: {filepath}[/dim]")
                 
             except Exception as e:
                 console.print(f"\n[red]Error during summarization: {str(e)}[/red]")

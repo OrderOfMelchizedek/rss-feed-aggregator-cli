@@ -56,7 +56,10 @@ The tool can generate AI-powered summaries of your news articles:
 - **Two-Part Summary**:
   - Top 3 Most Important Developments
   - Thematic Summary of all other headlines
-- **Save to File**: Option to save generated summaries as markdown files
+- **Automatic Save**: Summaries are automatically saved as markdown files with:
+  - AI-generated title as filename
+  - Full summary content
+  - Appendix with complete article list including URLs and full summaries
 
 #### Setup:
 1. Install dependencies: `pip install -r requirements.txt`
