@@ -146,6 +146,7 @@ class GeminiSummarizer:
         for i, article in enumerate(articles, 1):
             prompt += f"{i}. [{article.category}] {article.feed_title} ({article.published})\n"
             prompt += f"   Title: {article.title}\n"
+            prompt += f"   URL: {article.link}\n"
             if article.content:
                 prompt += f"   Summary: {article.content}\n"
             prompt += "\n"

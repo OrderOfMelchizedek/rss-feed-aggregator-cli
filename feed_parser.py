@@ -260,9 +260,6 @@ class FeedParser:
         summary = re.sub('<[^<]+?>', '', summary)
         summary = summary.strip()
         
-        if len(summary) > 300:
-            summary = summary[:297] + '...'
-        
         return summary
     
     def _deduplicate_articles(self, articles: List[Article], similarity_threshold: float = 0.85) -> List[Article]:

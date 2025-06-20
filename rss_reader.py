@@ -2,7 +2,6 @@
 
 import click
 from rich.console import Console
-from rich.table import Table
 from rich.text import Text
 from rich.prompt import Confirm
 from datetime import datetime
@@ -153,6 +152,7 @@ def display_articles(articles, show_summary=True):
         
         console.print(f"[dim]{time_str}[/dim] | [cyan]{article.category}[/cyan] | [green]{article.feed_title}[/green]")
         console.print(f"  [bold white]{article.title}[/bold white]")
+        console.print(f"  [blue][link={article.link}]{article.link}[/link][/blue]")
         
         if show_summary and article.summary:
             console.print(f"  [dim]{article.summary}[/dim]")
