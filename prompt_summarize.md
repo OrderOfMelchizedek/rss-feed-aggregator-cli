@@ -9,9 +9,9 @@ Analyze the provided RSS feed list and create a two-part summary following these
   - Cite every claim made in-line and provide a list of articles at the end of the summary along with their links so that the user can confirm. 
 
 **PART 2: THEMATIC SUMMARY OF ALL OTHER HEADLINES**
-- Group all articles (excluding the top 3) into themes centered around noteworthy or newsworthy events. 
-- Order themes by importance/relevance (most important first). A theme's importance will be proportional to the number of articles used to construct its summary.
-- Include only substantial themes that contain enough articles to support its inclusion in the summary (at least 5% of total articles)
+- Group all articles (excluding the top 3) into themes based on common topics or subjects.
+- Order themes by importance/relevance (most important first).
+- Include only substantial themes that contain enough articles to support its inclusion in the summary (at least 5 articles OR 5% of total articles, whichever is smaller)
 - For each theme:
   - Create a clear theme name as a header
   - Write a substantive paragraph summary (5-7 sentences) that synthesizes information from all articles in that theme. Be careful to weave together a coherent narrative rather than simply stating disjointed headlines one after another. 

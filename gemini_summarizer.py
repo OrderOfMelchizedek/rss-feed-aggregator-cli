@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from google import genai
 from google.genai import types
 from rich.console import Console
-from rich.table import Table
 from rich.prompt import Confirm
 import re
 from dotenv import load_dotenv
@@ -108,28 +107,14 @@ class GeminiSummarizer:
     
     def display_token_summary(self, articles: List[ArticleForSummary]) -> int:
         """Display token count summary and return total tokens."""
-        table = Table(show_header=True, header_style="bold magenta")
-        table.add_column("Feed", style="green", width=30)
-        table.add_column("Title", style="white", width=50)
-        table.add_column("Words", style="cyan", justify="right")
-        table.add_column("Est. Tokens", style="yellow", justify="right")
-        
         total_words = 0
         total_tokens = 0
         
         for article in articles:
-            table.add_row(
-                article.feed_title[:30],
-                article.title[:50] + ("..." if len(article.title) > 50 else ""),
-                str(article.word_count),
-                str(article.estimated_tokens)
-            )
             total_words += article.word_count
             total_tokens += article.estimated_tokens
         
-        self.console.print("\n[bold]Token Count Summary[/bold]\n")
-        self.console.print(table)
-        self.console.print(f"\n[bold]Total: {total_words:,} words ≈ {total_tokens:,} tokens[/bold]")
+        self.console.print(f"\n[bold]Token Count: {total_words:,} words ≈ {total_tokens:,} tokens[/bold]")
         
         # Gemini Pro has a context window of 1MM tokens
         if total_tokens > 750000:
