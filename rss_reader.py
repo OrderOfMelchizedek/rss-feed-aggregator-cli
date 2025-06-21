@@ -169,12 +169,26 @@ def generate_and_save_summary(articles, source_name, summarizer):
         # Only use the title in the filename, no source names
         filename = f"{date_str} {safe_title}.md"
         
-        # Save to Obsidian folder
-        obsidian_folder = '/Users/svaug/Library/CloudStorage/Dropbox/Obsidian/Personal'
-        filepath = os.path.join(obsidian_folder, filename)
+        # Save to Obsidian folder organized by date
+        date_str_folder = datetime.now().strftime('%Y-%m-%d')
+        news_base_folder = '/Users/svaug/Library/CloudStorage/Dropbox/Obsidian/News'
         
-        # Ensure the directory exists
-        os.makedirs(obsidian_folder, exist_ok=True)
+        # Check if a folder starting with today's date already exists
+        existing_folder = None
+        if os.path.exists(news_base_folder):
+            for folder_name in os.listdir(news_base_folder):
+                if folder_name.startswith(date_str_folder):
+                    existing_folder = folder_name
+                    break
+        
+        # Use existing folder or create new one with just the date
+        if existing_folder:
+            obsidian_folder = os.path.join(news_base_folder, existing_folder)
+        else:
+            obsidian_folder = os.path.join(news_base_folder, date_str_folder)
+            os.makedirs(obsidian_folder, exist_ok=True)
+        
+        filepath = os.path.join(obsidian_folder, filename)
         
         with open(filepath, 'w') as f:
             f.write(f"# {generated_title}\n\n")

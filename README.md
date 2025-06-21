@@ -63,6 +63,7 @@ The tool can generate AI-powered summaries of your news articles:
   - AI-generated title as filename
   - Full summary content
   - Appendix with complete article list including URLs and full summaries
+  - Organized by date in folders: `/Obsidian/News/YYYY-MM-DD/`
 
 #### Setup:
 1. Install dependencies: `pip install -r requirements.txt`
